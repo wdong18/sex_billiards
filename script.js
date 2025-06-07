@@ -1,23 +1,27 @@
 // Constants for the game
+const PPM = 100; // Pixels Per Meter for Box2D scaling
 const TABLE_WIDTH = 800;
 const TABLE_HEIGHT = 400;
 const BALL_RADIUS = 15;
 const POCKET_RADIUS = 25;
 const CUE_BALL_POSITION = { x: 200, y: TABLE_HEIGHT / 2 };
-const FORCE_MULTIPLIER = 0.2;
+const FORCE_MULTIPLIER = 5; // Adjusted for Box2D ApplyLinearImpulse
 
-// Matter.js module aliases
-const Engine = Matter.Engine;
-const Render = Matter.Render;
-const World = Matter.World;
-const Bodies = Matter.Bodies;
-const Body = Matter.Body;
-const Events = Matter.Events;
-const Vector = Matter.Vector;
+// Box2D Aliases
+var b2Vec2 = Box2D.Common.Math.b2Vec2;
+var b2BodyDef = Box2D.Dynamics.b2BodyDef;
+var b2Body = Box2D.Dynamics.b2Body;
+var b2FixtureDef = Box2D.Dynamics.b2FixtureDef;
+var b2Fixture = Box2D.Dynamics.b2Fixture;
+var b2World = Box2D.Dynamics.b2World;
+var b2MassData = Box2D.Collision.Shapes.b2MassData;
+var b2PolygonShape = Box2D.Collision.Shapes.b2PolygonShape;
+var b2CircleShape = Box2D.Collision.Shapes.b2CircleShape;
+var b2DebugDraw = Box2D.Dynamics.b2DebugDraw;
 
 // Game state variables
-let engine;
-let render;
+let world; // Was: engine
+// let render; // This will be removed, rendering handled manually
 let balls = [];
 let pockets = [];
 let cue;
@@ -57,46 +61,43 @@ const BALL_COLORS = [
 
 // Initialize the game
 function init() {
-    // Create engine
-    engine = Engine.create({
-        enableSleeping: true
-    });
-    engine.world.gravity.y = 0;
+    // Initialize Box2D world
+    const gravity = new b2Vec2(0, 0); // No gravity for a top-down view
+    world = new b2World(gravity, true); // true to allow sleeping bodies
 
-    // Create renderer
-    render = Render.create({
-        canvas: canvas,
-        engine: engine,
-        options: {
-            width: TABLE_WIDTH,
-            height: TABLE_HEIGHT,
-            wireframes: false,
-            background: '#0a4d1c'
-        }
-    });
+    // Create table boundaries (cushions) using Box2D
+    const wallFixtureDef = new b2FixtureDef();
+    wallFixtureDef.density = 1.0;
+    wallFixtureDef.friction = 0.5;
+    wallFixtureDef.restitution = 0.8;
 
-    // Create table boundaries (cushions)
-    const wallOptions = {
-        isStatic: true,
-        restitution: 0.9,
-        friction: 0.1,
-        render: {
-            fillStyle: '#0a4d1c',
-            strokeStyle: '#0a4d1c',
-            lineWidth: 1
-        }
-    };
+    const wallBodyDef = new b2BodyDef();
+    wallBodyDef.type = b2Body.b2_staticBody;
 
     // Top wall
-    const topWall = Bodies.rectangle(TABLE_WIDTH / 2, 10, TABLE_WIDTH - 80, 20, wallOptions);
-    // Bottom wall
-    const bottomWall = Bodies.rectangle(TABLE_WIDTH / 2, TABLE_HEIGHT - 10, TABLE_WIDTH - 80, 20, wallOptions);
-    // Left wall
-    const leftWall = Bodies.rectangle(10, TABLE_HEIGHT / 2, 20, TABLE_HEIGHT - 80, wallOptions);
-    // Right wall
-    const rightWall = Bodies.rectangle(TABLE_WIDTH - 10, TABLE_HEIGHT / 2, 20, TABLE_HEIGHT - 80, wallOptions);
+    // Box2D's b2PolygonShape.SetAsBox takes half-width and half-height
+    wallFixtureDef.shape = new b2PolygonShape();
+    wallFixtureDef.shape.SetAsBox((TABLE_WIDTH - 80) / 2 / PPM, 10 / PPM);
+    wallBodyDef.position.Set(TABLE_WIDTH / 2 / PPM, 10 / PPM);
+    world.CreateBody(wallBodyDef).CreateFixture(wallFixtureDef);
 
-    World.add(engine.world, [topWall, bottomWall, leftWall, rightWall]);
+    // Bottom wall
+    wallFixtureDef.shape = new b2PolygonShape();
+    wallFixtureDef.shape.SetAsBox((TABLE_WIDTH - 80) / 2 / PPM, 10 / PPM);
+    wallBodyDef.position.Set(TABLE_WIDTH / 2 / PPM, (TABLE_HEIGHT - 10) / PPM);
+    world.CreateBody(wallBodyDef).CreateFixture(wallFixtureDef);
+
+    // Left wall
+    wallFixtureDef.shape = new b2PolygonShape();
+    wallFixtureDef.shape.SetAsBox(10 / PPM, (TABLE_HEIGHT - 80) / 2 / PPM);
+    wallBodyDef.position.Set(10 / PPM, TABLE_HEIGHT / 2 / PPM);
+    world.CreateBody(wallBodyDef).CreateFixture(wallFixtureDef);
+
+    // Right wall
+    wallFixtureDef.shape = new b2PolygonShape();
+    wallFixtureDef.shape.SetAsBox(10 / PPM, (TABLE_HEIGHT - 80) / 2 / PPM);
+    wallBodyDef.position.Set((TABLE_WIDTH - 10) / PPM, TABLE_HEIGHT / 2 / PPM);
+    world.CreateBody(wallBodyDef).CreateFixture(wallFixtureDef);
 
     // Create pockets
     createPockets();
@@ -104,19 +105,68 @@ function init() {
     // Create balls
     createBalls();
 
-    // Start the engine and renderer
-    Engine.run(engine);
-    Render.run(render);
-
     // Event listeners
     setupEventListeners();
 
-    // Collision events
-    setupCollisionEvents();
+    // Collision detection will be set up via world.SetContactListener() later in init
+    // --- Collision Detection ---
+    const contactListener = new Box2D.Dynamics.b2ContactListener();
+
+    contactListener.BeginContact = function(contact) {
+        const fixtureA = contact.GetFixtureA();
+        const fixtureB = contact.GetFixtureB();
+        const bodyA = fixtureA.GetBody();
+        const bodyB = fixtureB.GetBody();
+        const userDataA = bodyA.GetUserData();
+        const userDataB = bodyB.GetUserData();
+
+        let ballBody = null;
+        let pocketBody = null;
+
+        // Check if bodyA is a ball and bodyB is a pocket
+        if (userDataA && userDataA.isBall && pockets.includes(bodyB)) {
+            ballBody = bodyA;
+            pocketBody = bodyB;
+        }
+        // Check if bodyB is a ball and bodyA is a pocket
+        else if (userDataB && userDataB.isBall && pockets.includes(bodyA)) {
+            ballBody = bodyB;
+            pocketBody = bodyA;
+        }
+
+        if (ballBody && pocketBody) {
+            // Ensure not to process the same collision multiple times if already destroying body
+            if (ballBody.GetUserData().isPocketed) return;
+            ballBody.GetUserData().isPocketed = true; // Mark as pocketed
+            handlePocketCollision(ballBody);
+        }
+    };
+
+    contactListener.EndContact = function(contact) {
+        // Can be used for things like ball leaving pocket (if it wasn't removed)
+    };
+    contactListener.PreSolve = function(contact, oldManifold) {
+        // Can be used to disable contacts dynamically
+    };
+    contactListener.PostSolve = function(contact, impulse) {
+        // Can be used to react to collision impulses
+    };
+
+    world.SetContactListener(contactListener);
 }
 
 // Create table pockets
 function createPockets() {
+    pockets = []; // Ensure pockets array is clean
+
+    const pocketFixtureDef = new b2FixtureDef();
+    pocketFixtureDef.isSensor = true; // This makes it a sensor
+    pocketFixtureDef.shape = new b2CircleShape(POCKET_RADIUS / PPM);
+    // Other properties like friction, restitution are not typically needed for sensors.
+
+    const pocketBodyDef = new b2BodyDef();
+    pocketBodyDef.type = b2Body.b2_staticBody;
+
     const pocketPositions = [
         { x: 20, y: 20 },                        // Top-left
         { x: TABLE_WIDTH / 2, y: 15 },           // Top-middle
@@ -127,65 +177,70 @@ function createPockets() {
     ];
 
     pocketPositions.forEach(pos => {
-        const pocket = Bodies.circle(pos.x, pos.y, POCKET_RADIUS, {
-            isStatic: true,
-            isSensor: true,
-            render: {
-                fillStyle: '#000000'
-            }
-        });
-        pockets.push(pocket);
-        World.add(engine.world, pocket);
+        pocketBodyDef.position.Set(pos.x / PPM, pos.y / PPM);
+        const pocketBody = world.CreateBody(pocketBodyDef);
+        pocketBody.CreateFixture(pocketFixtureDef);
+        // We need to store the Box2D body itself, or at least its fixture, for collision detection.
+        // Storing the body is simpler for now.
+        pockets.push(pocketBody);
     });
 }
 
 // Create billiard balls
 function createBalls() {
-    balls = [];
-    
-    // Create cue ball
-    cue = Bodies.circle(CUE_BALL_POSITION.x, CUE_BALL_POSITION.y, BALL_RADIUS, {
-        restitution: 0.9,
-        friction: 0.1,
-        frictionAir: 0.02,
-        density: 0.8,
-        label: 'cue',
-        render: {
-            fillStyle: BALL_COLORS[0]
-        }
-    });
+    balls = []; // Clear the array
+
+    // --- Cue Ball ---
+    const cueBodyDef = new b2BodyDef();
+    cueBodyDef.type = b2Body.b2_dynamicBody;
+    cueBodyDef.position.Set(CUE_BALL_POSITION.x / PPM, CUE_BALL_POSITION.y / PPM);
+    cueBodyDef.bullet = true; // For fast moving objects
+
+    const cueFixtureDef = new b2FixtureDef();
+    cueFixtureDef.shape = new b2CircleShape(BALL_RADIUS / PPM);
+    cueFixtureDef.density = 1.0;
+    cueFixtureDef.friction = 0.25;
+    cueFixtureDef.restitution = 0.75;
+
+    cue = world.CreateBody(cueBodyDef);
+    cue.CreateFixture(cueFixtureDef);
+    cue.SetLinearDamping(0.5); // For rolling/air resistance
+    cue.SetUserData({ id: 'cue', color: BALL_COLORS[0], isBall: true });
     balls.push(cue);
 
-    // Create rack of 15 balls in triangle formation
-    const startX = 600;
+    // --- Numbered Balls ---
+    const startX = 600; // Pixel coordinates
     const startY = TABLE_HEIGHT / 2;
-    const spacing = BALL_RADIUS * 2 + 1;
-    
+    const spacing = BALL_RADIUS * 2 + 1; // Pixel spacing
+
     let ballCount = 1;
     for (let row = 0; row < 5; row++) {
         for (let col = 0; col <= row; col++) {
             if (ballCount <= 15) {
                 const x = startX + row * spacing * Math.sqrt(3) / 2;
                 const y = startY - (row * spacing / 2) + col * spacing;
+
+                const ballBodyDef = new b2BodyDef();
+                ballBodyDef.type = b2Body.b2_dynamicBody;
+                ballBodyDef.position.Set(x / PPM, y / PPM);
+                ballBodyDef.bullet = true; // For fast moving objects
+
+                const ballFixtureDef = new b2FixtureDef();
+                ballFixtureDef.shape = new b2CircleShape(BALL_RADIUS / PPM);
+                ballFixtureDef.density = 1.0;
+                ballFixtureDef.friction = 0.25;
+                ballFixtureDef.restitution = 0.75;
+
+                const ballBody = world.CreateBody(ballBodyDef);
+                ballBody.CreateFixture(ballFixtureDef);
+                ballBody.SetLinearDamping(0.5);
+                ballBody.SetUserData({ id: `ball${ballCount}`, color: BALL_COLORS[ballCount], isBall: true, number: ballCount });
                 
-                const ball = Bodies.circle(x, y, BALL_RADIUS, {
-                    restitution: 0.9,
-                    friction: 0.1,
-                    frictionAir: 0.02,
-                    density: 0.8,
-                    label: `ball${ballCount}`,
-                    render: {
-                        fillStyle: BALL_COLORS[ballCount]
-                    }
-                });
-                
-                balls.push(ball);
+                balls.push(ballBody);
                 ballCount++;
             }
         }
     }
-    
-    World.add(engine.world, balls);
 }
 
 // Set up event listeners
@@ -196,66 +251,74 @@ function setupEventListeners() {
     resetButton.addEventListener('click', resetGame);
 }
 
-// Set up collision events
-function setupCollisionEvents() {
-    Events.on(engine, 'collisionStart', (event) => {
-        const pairs = event.pairs;
-        
-        for (let i = 0; i < pairs.length; i++) {
-            const pair = pairs[i];
-            
-            // Check if a ball collided with a pocket
-            if (pockets.includes(pair.bodyA) && balls.includes(pair.bodyB)) {
-                handlePocketCollision(pair.bodyB);
-            } else if (pockets.includes(pair.bodyB) && balls.includes(pair.bodyA)) {
-                handlePocketCollision(pair.bodyA);
-            }
-        }
-    });
-}
-
 // Handle ball falling into pocket
-function handlePocketCollision(ball) {
-    // Remove the ball from the world
-    World.remove(engine.world, ball);
-    
+function handlePocketCollision(ballBody) { // Renamed parameter
     // Remove from balls array
-    const index = balls.indexOf(ball);
+    // Important: Do this BEFORE destroying the body, as user data might be lost
+    const index = balls.indexOf(ballBody);
     if (index > -1) {
         balls.splice(index, 1);
     }
-    
+
+    const ballUserData = ballBody.GetUserData();
+
+    // Remove the ball from the world
+    // Schedule for destruction after world step if issues arise
+    world.DestroyBody(ballBody);
+
     // Score points
-    if (ball === cue) {
+    if (ballUserData.id === 'cue') {
         // Cue ball went in - foul
-        resetCueBall();
+        resetCueBall(); // This function already handles creating a new cue and adding to 'balls'
         switchPlayer();
     } else {
         // Regular ball went in
-        if (ball.label === 'ball8') {
+        if (ballUserData.id === 'ball8') {
             // 8 ball went in
             endGame();
         } else {
             // Other ball went in
             updateScore();
+            // Note: Player does not switch here, they continue playing.
+            // SwitchPlayer() is only called for a foul or if no ball is pocketed.
+            // This logic might need review based on actual game rules.
         }
     }
 }
 
 // Reset cue ball position
 function resetCueBall() {
-    cue = Bodies.circle(CUE_BALL_POSITION.x, CUE_BALL_POSITION.y, BALL_RADIUS, {
-        restitution: 0.9,
-        friction: 0.1,
-        frictionAir: 0.02,
-        density: 0.8,
-        label: 'cue',
-        render: {
-            fillStyle: BALL_COLORS[0]
+    // cue is already a global variable, find and remove old one if it exists
+    if (cue && cue.GetWorld()) { // Check if cue exists and is part of a world
+        world.DestroyBody(cue);
+    }
+
+    const cueBodyDef = new b2BodyDef();
+    cueBodyDef.type = b2Body.b2_dynamicBody;
+    cueBodyDef.position.Set(CUE_BALL_POSITION.x / PPM, CUE_BALL_POSITION.y / PPM);
+    cueBodyDef.bullet = true;
+
+    const cueFixtureDef = new b2FixtureDef();
+    cueFixtureDef.shape = new b2CircleShape(BALL_RADIUS / PPM);
+    cueFixtureDef.density = 1.0;
+    cueFixtureDef.friction = 0.25;
+    cueFixtureDef.restitution = 0.75;
+
+    cue = world.CreateBody(cueBodyDef);
+    cue.CreateFixture(cueFixtureDef);
+    cue.SetLinearDamping(0.5);
+    cue.SetUserData({ id: 'cue', color: BALL_COLORS[0], isBall: true });
+
+    // Add to balls array, ensuring no duplicates if called mid-game
+    // First, remove any existing cue ball from the 'balls' array by checking user data
+    for (let i = balls.length - 1; i >= 0; i--) {
+        const userData = balls[i].GetUserData();
+        if (userData && userData.id === 'cue') {
+            balls.splice(i, 1);
+            break;
         }
-    });
+    }
     balls.push(cue);
-    World.add(engine.world, cue);
 }
 
 // Update score
@@ -303,7 +366,7 @@ function handleMouseMove(event) {
     mouseEndPos = { x: mouseX, y: mouseY };
     
     // Redraw with aiming line
-    Render.world(render);
+    // Render.world(render); // Removed for Box2D
     drawAimingLine();
 }
 
@@ -318,13 +381,20 @@ function handleMouseUp(event) {
     mouseEndPos = { x: mouseX, y: mouseY };
     
     // Apply force to cue ball
-    if (mouseStartPos && mouseEndPos) {
-        const force = {
-            x: (mouseStartPos.x - mouseEndPos.x) * FORCE_MULTIPLIER,
-            y: (mouseStartPos.y - mouseEndPos.y) * FORCE_MULTIPLIER
-        };
-        
-        Body.applyForce(cue, cue.position, force);
+    if (mouseStartPos && mouseEndPos && cue) { // Ensure cue is valid
+        // Convert mouse displacement to a force vector
+        // The original FORCE_MULTIPLIER might be too small or too large for Box2D.
+        // We can adjust FORCE_MULTIPLIER later.
+        // For ApplyLinearImpulse, the vector represents the change in momentum.
+        const impulse = new b2Vec2(
+            (mouseStartPos.x - mouseEndPos.x) * FORCE_MULTIPLIER,
+            (mouseStartPos.y - mouseEndPos.y) * FORCE_MULTIPLIER
+        );
+
+        // Apply the impulse to the center of the cue ball.
+        // It's better to ensure the ball is awake before applying impulse
+        cue.SetAwake(true);
+        cue.ApplyLinearImpulse(impulse, cue.GetPosition()); // GetPosition() is center for circle
     }
     
     // Reset aiming
@@ -337,7 +407,10 @@ function handleMouseUp(event) {
 function drawAimingLine() {
     if (!mouseStartPos || !mouseEndPos) return;
     
-    const context = render.context;
+    // const context = render.context; // Removed for Box2D, will be re-added
+    // TODO: Get canvas context directly
+    const canvas = document.getElementById('billiards-table');
+    const context = canvas.getContext('2d');
     context.beginPath();
     context.moveTo(cue.position.x, cue.position.y);
     
@@ -360,12 +433,23 @@ function drawAimingLine() {
 }
 
 // Check if any balls are still moving
-function isAimingInProgress() {
+function isAimingInProgress() { // Renamed from isAnyBallMoving for clarity
     for (let i = 0; i < balls.length; i++) {
-        const speed = Vector.magnitude(balls[i].velocity);
-        if (speed > 0.1) {
-            return true;
+        if (balls[i] && balls[i].GetLinearVelocity) { // Check if body exists and has method
+             const velocity = balls[i].GetLinearVelocity();
+             // Box2D's b2Vec2 doesn't have a direct magnitude() or length() like Matter.Vector
+             // We calculate it manually: sqrt(x*x + y*y)
+             const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+             if (speed > 0.01) { // Threshold for movement in m/s
+                 return true;
+             }
         }
+    }
+    // Also check angular velocity if balls can spin significantly
+    for (let i = 0; i < balls.length; i++) {
+         if (balls[i] && balls[i].GetAngularVelocity && Math.abs(balls[i].GetAngularVelocity()) > 0.01) {
+             return true;
+         }
     }
     return false;
 }
