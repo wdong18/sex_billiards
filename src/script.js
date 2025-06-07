@@ -1,3 +1,6 @@
+const Box2D = require('box2dweb');
+require('./style.css'); // Webpack will handle this
+
 // Constants for the game
 const PPM = 100; // Pixels Per Meter for Box2D scaling
 const TABLE_WIDTH = 800;
@@ -235,7 +238,7 @@ function createBalls() {
                 ballBody.CreateFixture(ballFixtureDef);
                 ballBody.SetLinearDamping(0.5);
                 ballBody.SetUserData({ id: `ball${ballCount}`, color: BALL_COLORS[ballCount], isBall: true, number: ballCount });
-                
+
                 balls.push(ballBody);
                 ballCount++;
             }
@@ -346,11 +349,11 @@ function endGame() {
 // Handle mouse down event
 function handleMouseDown(event) {
     if (!gameActive || isAimingInProgress()) return;
-    
+
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
-    
+
     mouseStartPos = { x: mouseX, y: mouseY };
     isAiming = true;
 }
@@ -358,13 +361,13 @@ function handleMouseDown(event) {
 // Handle mouse move event
 function handleMouseMove(event) {
     if (!isAiming) return;
-    
+
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
-    
+
     mouseEndPos = { x: mouseX, y: mouseY };
-    
+
     // Redraw with aiming line
     // Render.world(render); // Removed for Box2D
     drawAimingLine();
@@ -373,13 +376,13 @@ function handleMouseMove(event) {
 // Handle mouse up event
 function handleMouseUp(event) {
     if (!isAiming) return;
-    
+
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
-    
+
     mouseEndPos = { x: mouseX, y: mouseY };
-    
+
     // Apply force to cue ball
     if (mouseStartPos && mouseEndPos && cue) { // Ensure cue is valid
         // Convert mouse displacement to a force vector
@@ -396,7 +399,7 @@ function handleMouseUp(event) {
         cue.SetAwake(true);
         cue.ApplyLinearImpulse(impulse, cue.GetPosition()); // GetPosition() is center for circle
     }
-    
+
     // Reset aiming
     mouseStartPos = null;
     mouseEndPos = null;
@@ -406,26 +409,26 @@ function handleMouseUp(event) {
 // Draw aiming line
 function drawAimingLine() {
     if (!mouseStartPos || !mouseEndPos) return;
-    
+
     // const context = render.context; // Removed for Box2D, will be re-added
     // TODO: Get canvas context directly
     const canvas = document.getElementById('billiards-table');
     const context = canvas.getContext('2d');
     context.beginPath();
     context.moveTo(cue.position.x, cue.position.y);
-    
+
     // Calculate the direction vector
     const dirX = cue.position.x - mouseEndPos.x;
     const dirY = cue.position.y - mouseEndPos.y;
-    
+
     // Normalize and extend the line
     const length = Math.sqrt(dirX * dirX + dirY * dirY);
     const normalizedX = dirX / length;
     const normalizedY = dirY / length;
-    
+
     const endX = cue.position.x + normalizedX * 100;
     const endY = cue.position.y + normalizedY * 100;
-    
+
     context.lineTo(endX, endY);
     context.strokeStyle = 'white';
     context.lineWidth = 2;
@@ -456,11 +459,17 @@ function isAimingInProgress() { // Renamed from isAnyBallMoving for clarity
 
 // Reset the game
 function resetGame() {
-    // Clear existing balls
-    for (let i = 0; i < balls.length; i++) {
-        World.remove(engine.world, balls[i]);
+    // Clear existing balls from the Box2D world and the 'balls' array
+    // Iterate backwards to safely remove elements from the array
+    for (let i = balls.length - 1; i >= 0; i--) {
+        const ballBody = balls[i];
+        if (ballBody && ballBody.GetWorld()) { // Check if body exists and is in a world
+            world.DestroyBody(ballBody);
+        }
     }
-    
+    balls = []; // Reset the array after all bodies are destroyed
+    cue = null; // Explicitly nullify cue
+
     // Reset scores and game state
     player1Score = 0;
     player2Score = 0;
@@ -468,10 +477,10 @@ function resetGame() {
     player2ScoreElement.textContent = '0';
     currentPlayer = 1;
     gameActive = true;
-    
+
     // Create new balls
     createBalls();
 }
 
 // Initialize the game when the page loads
-window.onload = init; 
+window.onload = init;
