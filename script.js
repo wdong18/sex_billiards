@@ -108,6 +108,9 @@ function init() {
     Engine.run(engine);
     Render.run(render);
 
+    // Set up custom rendering for balls (numbers and stripes)
+    setupCustomBallRendering();
+
     // Event listeners
     setupEventListeners();
 
@@ -168,14 +171,23 @@ function createBalls() {
                 const x = startX + row * spacing * Math.sqrt(3) / 2;
                 const y = startY - (row * spacing / 2) + col * spacing;
                 
+                // 判断是全色球还是花色球
+                const isSolid = ballCount >= 1 && ballCount <= 7;
+                const isStriped = ballCount >= 9 && ballCount <= 15;
+                
                 const ball = Bodies.circle(x, y, BALL_RADIUS, {
                     restitution: 0.9,
                     friction: 0.1,
                     frictionAir: 0.02,
                     density: 0.8,
                     label: `ball${ballCount}`,
+                    ballNumber: ballCount, // 存储球的号码
                     render: {
-                        fillStyle: BALL_COLORS[ballCount]
+                        fillStyle: BALL_COLORS[ballCount],
+                        showNumber: true, // 标记需要显示号码
+                        isSolid: isSolid, // 标记是否为全色球
+                        isStriped: isStriped, // 标记是否为花色球
+                        customRenderer: true // 标记需要自定义渲染
                     }
                 });
                 
@@ -194,6 +206,60 @@ function setupEventListeners() {
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mouseup', handleMouseUp);
     resetButton.addEventListener('click', resetGame);
+}
+
+// Set up custom ball rendering (numbers and stripes)
+function setupCustomBallRendering() {
+    Events.on(render, 'afterRender', () => {
+        const context = render.context;
+        
+        // Draw custom rendering for each ball
+        balls.forEach(ball => {
+            if (!ball.render || !ball.render.customRenderer) return;
+            if (ball.label === 'cue') return; // Skip cue ball
+            
+            const position = ball.position;
+            const radius = ball.circleRadius || BALL_RADIUS;
+            const ballNumber = ball.ballNumber;
+            
+            if (!ballNumber) return;
+            
+            context.save();
+            context.translate(position.x, position.y);
+            
+            // Draw striped pattern for striped balls (9-15)
+            if (ball.render.isStriped) {
+                context.beginPath();
+                context.arc(0, 0, radius, 0, Math.PI * 2);
+                context.fillStyle = '#ffffff'; // White stripe background
+                context.fill();
+                
+                // Draw colored top half
+                context.beginPath();
+                context.arc(0, 0, radius, Math.PI, 0, false);
+                context.fillStyle = ball.render.fillStyle;
+                context.fill();
+                
+                // Draw white stripe in the middle
+                context.beginPath();
+                context.rect(-radius * 0.3, -radius * 0.15, radius * 0.6, radius * 0.3);
+                context.fillStyle = '#ffffff';
+                context.fill();
+            } else {
+                // Solid balls (1-7) - just fill with color (already done by Matter.js)
+                // But we ensure it's solid by not drawing stripes
+            }
+            
+            // Draw ball number
+            context.fillStyle = ballNumber === 8 ? '#ffffff' : '#000000'; // White text for black 8-ball, black for others
+            context.font = 'bold 12px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(ballNumber.toString(), 0, 0);
+            
+            context.restore();
+        });
+    });
 }
 
 // Set up collision events
@@ -251,7 +317,8 @@ function resetCueBall() {
         density: 0.8,
         label: 'cue',
         render: {
-            fillStyle: BALL_COLORS[0]
+            fillStyle: BALL_COLORS[0],
+            customRenderer: false // Cue ball doesn't need custom rendering
         }
     });
     balls.push(cue);
