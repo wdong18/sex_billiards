@@ -116,6 +116,9 @@ function init() {
 
     // Collision events
     setupCollisionEvents();
+
+    // 防止球在大力击打库边时穿透飞出桌面：每帧将球心限制在台面内并修正速度
+    setupBallBoundsConstraint();
 }
 
 // Create table pockets (at table edge / outside playing surface, like real table)
@@ -260,6 +263,49 @@ function setupCustomBallRendering() {
             context.fillText(ballNumber.toString(), 0, 0);
             
             context.restore();
+        });
+    });
+}
+
+// 台面内边界（库边内侧）：球心不得超出此范围，否则会被拉回并反弹
+const TABLE_BOUNDS = {
+    xMin: 20 + BALL_RADIUS,   // 左库边内侧 + 半径
+    xMax: TABLE_WIDTH - 20 - BALL_RADIUS,
+    yMin: 20 + BALL_RADIUS,
+    yMax: TABLE_HEIGHT - 20 - BALL_RADIUS
+};
+
+function setupBallBoundsConstraint() {
+    Events.on(engine, 'afterUpdate', () => {
+        balls.forEach(ball => {
+            const pos = ball.position;
+            const vel = ball.velocity;
+            let clamped = false;
+            let newX = pos.x, newY = pos.y;
+            let vx = vel.x, vy = vel.y;
+
+            if (pos.x < TABLE_BOUNDS.xMin) {
+                newX = TABLE_BOUNDS.xMin;
+                vx = Math.abs(vel.x) * 0.9;
+                clamped = true;
+            } else if (pos.x > TABLE_BOUNDS.xMax) {
+                newX = TABLE_BOUNDS.xMax;
+                vx = -Math.abs(vel.x) * 0.9;
+                clamped = true;
+            }
+            if (pos.y < TABLE_BOUNDS.yMin) {
+                newY = TABLE_BOUNDS.yMin;
+                vy = Math.abs(vel.y) * 0.9;
+                clamped = true;
+            } else if (pos.y > TABLE_BOUNDS.yMax) {
+                newY = TABLE_BOUNDS.yMax;
+                vy = -Math.abs(vel.y) * 0.9;
+                clamped = true;
+            }
+            if (clamped) {
+                Body.setPosition(ball, { x: newX, y: newY });
+                Body.setVelocity(ball, { x: vx, y: vy });
+            }
         });
     });
 }
