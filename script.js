@@ -118,15 +118,15 @@ function init() {
     setupCollisionEvents();
 }
 
-// Create table pockets
+// Create table pockets (at table edge / outside playing surface, like real table)
 function createPockets() {
     const pocketPositions = [
-        { x: 20, y: 20 },                        // Top-left
-        { x: TABLE_WIDTH / 2, y: 15 },           // Top-middle
-        { x: TABLE_WIDTH - 20, y: 20 },          // Top-right
-        { x: 20, y: TABLE_HEIGHT - 20 },         // Bottom-left
-        { x: TABLE_WIDTH / 2, y: TABLE_HEIGHT - 15 }, // Bottom-middle
-        { x: TABLE_WIDTH - 20, y: TABLE_HEIGHT - 20 } // Bottom-right
+        { x: 0, y: 0 },                          // Top-left corner
+        { x: TABLE_WIDTH / 2, y: 0 },            // Top-middle
+        { x: TABLE_WIDTH, y: 0 },                // Top-right corner
+        { x: 0, y: TABLE_HEIGHT },               // Bottom-left corner
+        { x: TABLE_WIDTH / 2, y: TABLE_HEIGHT }, // Bottom-middle
+        { x: TABLE_WIDTH, y: TABLE_HEIGHT }      // Bottom-right corner
     ];
 
     pocketPositions.forEach(pos => {
