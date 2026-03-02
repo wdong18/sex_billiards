@@ -204,7 +204,9 @@ function createBalls() {
 function setupEventListeners() {
     canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('mousemove', handleMouseMove);
-    canvas.addEventListener('mouseup', handleMouseUp);
+    // 在 document 上监听 mouseup/mousemove，这样拖到球桌外松开也能触发击打
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
     resetButton.addEventListener('click', resetGame);
 }
 
