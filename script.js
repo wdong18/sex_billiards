@@ -63,7 +63,7 @@ function init() {
     });
     engine.world.gravity.y = 0;
 
-    // Create renderer
+    // Create renderer（台面用布料质地，由 beforeRender 绘制）
     render = Render.create({
         canvas: canvas,
         engine: engine,
@@ -71,9 +71,15 @@ function init() {
             width: TABLE_WIDTH,
             height: TABLE_HEIGHT,
             wireframes: false,
-            background: '#0a4d1c'
+            background: 'transparent',
+            clear: false
         }
     });
+    // 台面布料纹理：每帧在 beforeRender 中绘制
+    setupClothTexture();
+
+    // 在创建墙体前先注册台面布料绘制（beforeRender 里会清空并画布纹）
+    Events.on(render, 'beforeRender', drawClothBackground);
 
     // Create table boundaries (cushions)
     const wallOptions = {
@@ -265,6 +271,51 @@ function setupCustomBallRendering() {
             context.restore();
         });
     });
+}
+
+// 台面布料质地：生成绿呢纹样并在每帧 beforeRender 中绘制
+let clothPattern = null;
+
+function setupClothTexture() {
+    const size = 32;
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext('2d');
+    const baseGreen = '#0a4d1c';
+    ctx.fillStyle = baseGreen;
+    ctx.fillRect(0, 0, size, size);
+    // 细密织纹：交叉浅色线
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= size; i += 4) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, size);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(size, i);
+        ctx.stroke();
+    }
+    // 轻微深浅变化模拟布料质感
+    ctx.fillStyle = 'rgba(0,0,0,0.03)';
+    for (let y = 0; y < size; y += 8) {
+        for (let x = (y / 8) % 2 ? 0 : 4; x < size; x += 8) {
+            ctx.fillRect(x, y, 4, 4);
+        }
+    }
+    clothPattern = ctx.createPattern(c, 'repeat');
+}
+
+function drawClothBackground() {
+    const ctx = render.context;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, TABLE_WIDTH, TABLE_HEIGHT);
+    ctx.fillStyle = clothPattern || '#0a4d1c';
+    ctx.fillRect(0, 0, TABLE_WIDTH, TABLE_HEIGHT);
+    ctx.restore();
 }
 
 // 台面内边界（库边内侧）：球心不得超出此范围，否则会被拉回并反弹
