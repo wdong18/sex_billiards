@@ -47,11 +47,26 @@ body {
     background-color: #45a049;
 }
 
-.table-container {
-    background-color: #0a4d1c;
-    border: 20px solid #854911;
+/* 球案外框：木质花纹 */
+.table-wrapper {
+    padding: 20px;
     border-radius: 12px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    /* 木质基色 + 木纹线条 */
+    background-color: #6b4423;
+    background-image:
+        linear-gradient(105deg, transparent 40%, rgba(0,0,0,0.08) 40.5%, transparent 41%),
+        linear-gradient(75deg, transparent 45%, rgba(0,0,0,0.06) 45.3%, transparent 45.6%),
+        linear-gradient(95deg, transparent 50%, rgba(0,0,0,0.1) 50.5%, transparent 51%),
+        linear-gradient(90deg, rgba(0,0,0,0.03) 0%, transparent 2%, transparent 98%, rgba(0,0,0,0.04) 100%),
+        linear-gradient(0deg, rgba(0,0,0,0.03) 0%, transparent 2%, transparent 98%, rgba(0,0,0,0.04) 100%);
+    background-size: 120px 80px, 100px 140px, 140px 90px, 100% 100%, 100% 100%;
+    background-position: 0 0, 20px 0, 40px 20px, 0 0, 0 0;
+}
+
+.table-container {
+    background-color: #0a4d1c;
+    border-radius: 4px;
 }
 
 #billiards-table {
